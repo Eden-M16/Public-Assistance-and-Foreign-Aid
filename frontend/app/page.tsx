@@ -4,17 +4,27 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { getContract, getProvider } from "../lib/contract";
 
+enum Category { Medical, Education, Disaster, Food, Other }
+const CATEGORY_LABELS = ["Medical", "Education", "Disaster", "Food", "Other"];
+
 export default function Home() {
   const [account, setAccount] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [totalDonated, setTotalDonated] = useState("0");
   const [contractBalance, setContractBalance] = useState("0");
   const [requests, setRequests] = useState<any[]>([]);
+  const [donors, setDonors] = useState<any[]>([]);
   const [donationAmount, setDonationAmount] = useState("");
   const [aidDescription, setAidDescription] = useState("");
   const [aidAmount, setAidAmount] = useState("");
+  const [aidCategory, setAidCategory] = useState<Category>(Category.Other);
   const [loading, setLoading] = useState(false);
   const [activities, setActivities] = useState<any[]>([]);
+  
+  // Search and Filter States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterCategory, setFilterCategory] = useState<string>("All");
+  const [filterStatus, setFilterStatus] = useState<string>("All");
 
   useEffect(() => {
     checkConnection();
@@ -61,14 +71,28 @@ export default function Home() {
 
       const donated = await contract.totalDonated();
       const balance = await contract.getContractBalance();
-      const count = await contract.getRequestsCount();
+      const reqCount = await contract.getRequestsCount();
+      const donorCount = await contract.getDonorsCount();
 
       setTotalDonated(ethers.formatEther(donated));
       setContractBalance(ethers.formatEther(balance));
 
+      // Fetch Donors
+      const donorList = [];
+      for (let i = 0; i < Number(donorCount); i++) {
+        const donorAddress = await contract.donors(i);
+        const amount = await contract.donations(donorAddress);
+        donorList.push({
+          address: donorAddress,
+          amount: ethers.formatEther(amount)
+        });
+      }
+      setDonors(donorList.sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 5));
+
+      // Fetch Requests
       const reqs = [];
       const activityLog = [];
-      for (let i = 0; i < Number(count); i++) {
+      for (let i = 0; i < Number(reqCount); i++) {
         const req = await contract.requests(i);
         reqs.push({
           id: i,
@@ -76,6 +100,7 @@ export default function Home() {
           description: req.description,
           amountRequested: ethers.formatEther(req.amountRequested),
           amountReceived: ethers.formatEther(req.amountReceived),
+          category: CATEGORY_LABELS[Number(req.category)],
           completed: req.completed,
         });
         if (req.completed) {
@@ -86,8 +111,8 @@ export default function Home() {
           });
         }
       }
-      setRequests(reqs.reverse()); // Show latest requests first
-      setActivities(activityLog.slice(0, 5)); // Show last 5 completed activities
+      setRequests(reqs.reverse());
+      setActivities(activityLog.slice(-5).reverse());
     } catch (error) {
       console.error("Error fetching data:", error);
     }
@@ -125,7 +150,8 @@ export default function Home() {
 
       const tx = await contract.requestAid(
         aidDescription,
-        ethers.parseEther(aidAmount)
+        ethers.parseEther(aidAmount),
+        aidCategory
       );
       await tx.wait();
       alert("Aid request submitted!");
@@ -158,11 +184,21 @@ export default function Home() {
     setLoading(false);
   }
 
+  const filteredRequests = requests.filter(req => {
+    const matchesSearch = req.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          req.recipient.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = filterCategory === "All" || req.category === filterCategory;
+    const matchesStatus = filterStatus === "All" || 
+                          (filterStatus === "Completed" && req.completed) || 
+                          (filterStatus === "Pending" && !req.completed);
+    return matchesSearch && matchesCategory && matchesStatus;
+  });
+
   const progress = Number(totalDonated) > 0 ? (Number(contractBalance) / Number(totalDonated)) * 100 : 0;
 
   return (
     <main className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Header Section */}
         <header className="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
@@ -189,9 +225,10 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          
           {/* Main Content (Forms & Requests) */}
-          <div className="lg:col-span-2 space-y-8">
+          <div className="lg:col-span-3 space-y-8">
             
             {/* Action Forms */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -233,13 +270,24 @@ export default function Home() {
                   <h2 className="text-xl font-bold text-slate-900">Request Assistance</h2>
                 </div>
                 <div className="space-y-4">
-                  <input
-                    type="text"
-                    placeholder="Brief description of need"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition outline-none"
-                    value={aidDescription}
-                    onChange={(e) => setAidDescription(e.target.value)}
-                  />
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      placeholder="Brief description of need"
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition outline-none"
+                      value={aidDescription}
+                      onChange={(e) => setAidDescription(e.target.value)}
+                    />
+                    <select
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-3 focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                      value={aidCategory}
+                      onChange={(e) => setAidCategory(Number(e.target.value))}
+                    >
+                      {CATEGORY_LABELS.map((label, idx) => (
+                        <option key={idx} value={idx}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="relative">
                     <input
                       type="number"
@@ -261,12 +309,45 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Filter & Search Bar */}
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
+              <div className="flex-1 relative">
+                <svg className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <input
+                  type="text"
+                  placeholder="Search by description or address..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2">
+                <select 
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                >
+                  <option value="All">All Categories</option>
+                  {CATEGORY_LABELS.map(label => <option key={label} value={label}>{label}</option>)}
+                </select>
+                <select 
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                >
+                  <option value="All">All Status</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              </div>
+            </div>
+
             {/* Requests List */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                 <h2 className="text-xl font-bold text-slate-900">Active Aid Requests</h2>
                 <span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200 uppercase tracking-wider">
-                  Live on Chain
+                  {filteredRequests.length} Requests Found
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -274,6 +355,7 @@ export default function Home() {
                   <thead className="bg-slate-50/50">
                     <tr>
                       <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Recipient</th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
                       <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Purpose</th>
                       <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Amount</th>
                       <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
@@ -281,16 +363,21 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {requests.length === 0 ? (
+                    {filteredRequests.length === 0 ? (
                       <tr>
-                        <td colSpan={isOwner ? 5 : 4} className="px-6 py-12 text-center text-slate-400 font-medium">No aid requests recorded yet.</td>
+                        <td colSpan={isOwner ? 6 : 5} className="px-6 py-12 text-center text-slate-400 font-medium">No aid requests match your filters.</td>
                       </tr>
                     ) : (
-                      requests.map((req) => (
+                      filteredRequests.map((req) => (
                         <tr key={req.id} className="hover:bg-slate-50 transition">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm font-mono text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">
                               {req.recipient.slice(0, 6)}...{req.recipient.slice(-4)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md capitalize">
+                              {req.category}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600 max-w-xs truncate">{req.description}</td>
@@ -358,6 +445,29 @@ export default function Home() {
                   <p className="text-2xl font-bold">{requests.filter(r => r.completed).length}</p>
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Aids Sent</p>
                 </div>
+              </div>
+            </div>
+
+            {/* Top Donors Leaderboard */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
+                <span className="w-2 h-2 bg-indigo-600 rounded-full"></span>
+                <span>Top Contributors</span>
+              </h3>
+              <div className="space-y-4">
+                {donors.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-4">No donations yet.</p>
+                ) : (
+                  donors.map((donor, i) => (
+                    <div key={i} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xs font-bold text-slate-400 w-4">{i + 1}</span>
+                        <span className="text-xs font-mono text-slate-600">{donor.address.slice(0, 6)}...{donor.address.slice(-4)}</span>
+                      </div>
+                      <span className="text-sm font-bold text-indigo-600">{donor.amount} ETH</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

@@ -68,6 +68,12 @@
         "internalType": "uint256",
         "name": "amount",
         "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum PublicAssistance.Category",
+        "name": "category",
+        "type": "uint8"
       }
     ],
     "name": "RequestCreated",
@@ -113,8 +119,40 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "donors",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "getContractBalance",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getDonorsCount",
     "outputs": [
       {
         "internalType": "uint256",
@@ -162,6 +200,11 @@
         "internalType": "uint256",
         "name": "_amount",
         "type": "uint256"
+      },
+      {
+        "internalType": "enum PublicAssistance.Category",
+        "name": "_category",
+        "type": "uint8"
       }
     ],
     "name": "requestAid",
@@ -198,6 +241,11 @@
         "internalType": "uint256",
         "name": "amountReceived",
         "type": "uint256"
+      },
+      {
+        "internalType": "enum PublicAssistance.Category",
+        "name": "category",
+        "type": "uint8"
       },
       {
         "internalType": "bool",
