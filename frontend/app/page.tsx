@@ -92,6 +92,14 @@ export default function Home() {
   async function fetchData() {
     try {
       const provider = getProvider();
+      
+      // Check if code exists at the address
+      const code = await provider.getCode(getContract(provider).target);
+      if (code === "0x") {
+        console.warn("No contract code found at address. Please ensure the contract is deployed to the current network.");
+        return;
+      }
+
       const contract = getContract(provider);
 
       const donated = await contract.totalDonated();
